@@ -1,6 +1,5 @@
 // ============================================
-// محفظة المفيد نت - الخادم الرئيسي (Node.js)
-// تم حل مشكلة مسارات المجلدات (Views Lookup Error)
+// محفظة المفيد نت - الخادم الرئيسي (النسخة الكاملة)
 // ============================================
 
 require('dotenv').config();
@@ -18,20 +17,20 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// ========== إعداد المسارات (هذا الجزء هو حل المشكلة) ==========
+// ========== إعدادات المسارات والمجلدات ==========
 
-// تأكد أن مجلد الـ views موجود في المجلد الرئيسي للمشروع
-app.set('views', path.join(__dirname, 'views')); 
+// 1. تحديد مجلد القوالب (Views)
+app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 
-// تأكد أن المجلد العام للملفات الثابتة موجود
+// 2. تحديد مجلد الملفات العامة (Public)
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-// إعداد الجلسات
+// 3. إعداد الجلسة
 app.use(session({
     secret: process.env.SESSION_SECRET || 'wallet_secret_2026',
     resave: false,
@@ -44,6 +43,7 @@ const dbPath = path.join(__dirname, 'database', 'wallet.db');
 const db = new sqlite3.Database(dbPath);
 
 db.serialize(() => {
+    // جدول المستخدمين
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -53,19 +53,31 @@ db.serialize(() => {
         device_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+
+    // جدول الشحن
     db.run(`CREATE TABLE IF NOT EXISTS wallet_charges (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        phone TEXT, amount REAL, transaction_id TEXT, method TEXT,
-        status TEXT DEFAULT 'pending', created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        phone TEXT,
+        amount REAL,
+        transaction_id TEXT,
+        method TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+
+    // جدول المشتريات
     db.run(`CREATE TABLE IF NOT EXISTS gift_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        phone TEXT, cost REAL, request_type TEXT, voucher_code TEXT,
-        status TEXT DEFAULT 'completed', created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        phone TEXT,
+        cost REAL,
+        request_type TEXT,
+        voucher_code TEXT,
+        status TEXT DEFAULT 'completed',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 });
 
-// التحقق من تسجيل الدخول
+// مديول التحقق من الجلسة
 const checkAuth = (req, res, next) => {
     if (req.session.user) return next();
     res.redirect('/');
@@ -73,7 +85,7 @@ const checkAuth = (req, res, next) => {
 
 // ========== المسارات (Routes) ==========
 
-// صفحة الدخول
+// صفحة الدخول الرئيسية
 app.get('/', (req, res) => {
     if (req.session.user) return res.redirect('/dashboard');
     res.render('index', { error: null });
@@ -99,42 +111,52 @@ app.get('/dashboard', checkAuth, (req, res) => {
     });
 });
 
-// التسجيل
+// صفحة التسجيل
 app.get('/register', (req, res) => res.render('register'));
 
+// API التسجيل
 app.post('/api/register', async (req, res) => {
     const { name, phone, password, device_id } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    db.run('INSERT INTO users (name, phone, password, device_id) VALUES (?, ?, ?, ?)', 
-    [name, phone, hashedPassword, device_id], (err) => {
-        if (err) return res.json({ error: 'رقم الهاتف مسجل مسبقاً' });
-        res.json({ success: true });
-    });
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        db.run('INSERT INTO users (name, phone, password, device_id) VALUES (?, ?, ?, ?)', 
+        [name, phone, hashedPassword, device_id], (err) => {
+            if (err) return res.json({ error: 'رقم الهاتف مسجل مسبقاً' });
+            res.json({ success: true });
+        });
+    } catch (e) {
+        res.json({ error: 'خطأ في معالجة البيانات' });
+    }
 });
 
-// الشحن
-app.get('/charge', checkAuth, (req, res) => res.render('charge', { user: req.session.user }));
+// صفحة الشحن
+app.get('/charge', checkAuth, (req, res) => {
+    res.render('charge', { user: req.session.user });
+});
 
+// API طلب الشحن
 app.post('/api/charge', checkAuth, (req, res) => {
     const { amount, transaction_id, method } = req.body;
     db.run('INSERT INTO wallet_charges (phone, amount, transaction_id, method) VALUES (?, ?, ?, ?)',
     [req.session.user.phone, amount, transaction_id, method], (err) => {
-        if (err) return res.json({ error: 'خطأ في الطلب' });
+        if (err) return res.json({ error: 'خطأ في إرسال الطلب' });
         res.json({ success: true });
     });
 });
 
-// الشراء
+// صفحة الشراء
 app.get('/buy', checkAuth, (req, res) => {
     db.get('SELECT * FROM users WHERE id = ?', [req.session.user.id], (err, user) => {
         res.render('buy', { user });
     });
 });
 
+// API تنفيذ الشراء
 app.post('/api/buy', checkAuth, (req, res) => {
     const { card_name, price } = req.body;
     db.get('SELECT * FROM users WHERE id = ?', [req.session.user.id], (err, user) => {
         if (user.wallet_balance < price) return res.json({ error: 'رصيدك غير كافٍ' });
+        
         const voucher = uuidv4().substring(0, 8).toUpperCase();
         db.run('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?', [price, user.id], () => {
             db.run('INSERT INTO gift_requests (phone, cost, request_type, voucher_code) VALUES (?, ?, ?, ?)',
@@ -145,27 +167,39 @@ app.post('/api/buy', checkAuth, (req, res) => {
     });
 });
 
-// السجل
+// سجل العمليات
 app.get('/history', checkAuth, (req, res) => {
     const phone = req.session.user.phone;
-    db.all(`SELECT 'شحن' as type, amount, status, created_at, transaction_id as ref FROM wallet_charges WHERE phone = ?
-            UNION ALL 
-            SELECT 'شراء' as type, cost as amount, status, created_at, request_type as ref FROM gift_requests WHERE phone = ?
-            ORDER BY created_at DESC`, [phone, phone], (err, rows) => {
+    const query = `
+        SELECT 'شحن' as type, amount, status, created_at, transaction_id as ref FROM wallet_charges WHERE phone = ?
+        UNION ALL
+        SELECT 'شراء' as type, cost as amount, status, created_at, request_type as ref FROM gift_requests WHERE phone = ?
+        ORDER BY created_at DESC`;
+    db.all(query, [phone, phone], (err, rows) => {
         res.render('history', { transactions: rows || [] });
     });
 });
 
-// الخروج
+// عرض الكرت
+app.get('/display_card', checkAuth, (req, res) => {
+    res.render('display_card', { code: req.query.code, amount: req.query.amount });
+});
+
+// تسجيل الخروج
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/');
 });
 
-// السوكيت للإشعارات
+// API الجلسة
+app.get('/api/session', (req, res) => {
+    res.json({ phone: req.session.user ? req.session.user.phone : '', userId: req.session.user ? req.session.user.id : '' });
+});
+
+// السوكيت
 io.on('connection', (socket) => {
     socket.on('register-user', (userId) => { socket.join(`user_${userId}`); });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`الخادم يعمل على: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`الخادم يعمل بنجاح على المنفذ ${PORT}`));
