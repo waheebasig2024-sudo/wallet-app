@@ -14,6 +14,7 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,19 +33,26 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'wallet_secret_2026',
+  secret: process.env.SESSION_SECRET || 'wallet_secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, maxAge: 7 * 24 * 60 * 60 * 1000 } // 7 أيام
+  cookie: { secure: false, maxAge: 7 * 24 * 60 * 60 * 1000 }
 }));
 
+// ========== إنشاء مجلد قاعدة البيانات ==========
+const dbDir = path.join(__dirname, '../database');
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+const dbPath = path.join(dbDir, 'wallet.db');
+console.log('📁 مسار قاعدة البيانات:', dbPath);
+
 // ========== قاعدة البيانات ==========
-const dbPath = path.join(__dirname, '../database/wallet.db');
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('❌ خطأ في قاعدة البيانات:', err.message);
   } else {
-    console.log('✅ قاعدة البيانات متصلة');
+    console.log('✅ قاعدة البيانات متصلة بنجاح');
     إنشاءالجداول();
   }
 });
@@ -63,9 +71,12 @@ function إنشاءالجداول() {
         role TEXT DEFAULT 'user',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
-    `);
+    `, (err) => {
+      if (err) console.error('خطأ في جدول users:', err.message);
+      else console.log('✅ جدول users جاهز');
+    });
 
-    // جدول الكروت (المخزون)
+    // جدول الكروت
     db.run(`
       CREATE TABLE IF NOT EXISTS card_stock (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +86,10 @@ function إنشاءالجداول() {
         sold_to TEXT,
         sold_at DATETIME
       )
-    `);
+    `, (err) => {
+      if (err) console.error('خطأ في جدول card_stock:', err.message);
+      else console.log('✅ جدول card_stock جاهز');
+    });
 
     // جدول طلبات الشراء
     db.run(`
@@ -89,7 +103,10 @@ function إنشاءالجداول() {
         gift_card TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
-    `);
+    `, (err) => {
+      if (err) console.error('خطأ في جدول gift_requests:', err.message);
+      else console.log('✅ جدول gift_requests جاهز');
+    });
 
     // جدول طلبات الشحن
     db.run(`
@@ -101,31 +118,24 @@ function إنشاءالجداول() {
         status TEXT DEFAULT 'pending',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
-    `);
+    `, (err) => {
+      if (err) console.error('خطأ في جدول wallet_charges:', err.message);
+      else console.log('✅ جدول wallet_charges جاهز');
+    });
 
-    console.log('✅ جميع الجداول جاهزة');
-    
     // إضافة بعض الكروت التجريبية إذا كانت فارغة
-    db.get('SELECT COUNT(*) as count FROM card_stock', [], (err, row) => {
-      if (err) return;
-      if (row.count === 0) {
+    db.get("SELECT COUNT(*) as count FROM card_stock", [], (err, row) => {
+      if (!err && row.count === 0) {
         const sampleCards = [
-          { type: '200', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '200', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '300', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '300', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '500', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '500', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '1000', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '1000', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '3000', code: 'MF' + Math.floor(Math.random() * 1000000) },
-          { type: '3000', code: 'MF' + Math.floor(Math.random() * 1000000) }
+          { type: '200', code: 'CARD200' + Math.floor(Math.random() * 10000) },
+          { type: '300', code: 'CARD300' + Math.floor(Math.random() * 10000) },
+          { type: '500', code: 'CARD500' + Math.floor(Math.random() * 10000) },
+          { type: '1000', code: 'CARD1000' + Math.floor(Math.random() * 10000) },
+          { type: '3000', code: 'CARD3000' + Math.floor(Math.random() * 10000) }
         ];
-        const stmt = db.prepare('INSERT INTO card_stock (card_type, card_code) VALUES (?, ?)');
         sampleCards.forEach(card => {
-          stmt.run([card.type, card.code]);
+          db.run("INSERT INTO card_stock (card_type, card_code, status) VALUES (?, ?, 'available')", [card.type, card.code]);
         });
-        stmt.finalize();
         console.log('✅ تم إضافة كروت تجريبية');
       }
     });
@@ -138,7 +148,6 @@ function isLoggedIn(req) {
 }
 
 function validatePhone(phone) {
-  // يبدأ بـ 7 ويتكون من 9 أرقام
   const phoneRegex = /^7[0-9]{8}$/;
   return phoneRegex.test(phone);
 }
@@ -165,15 +174,10 @@ io.on('connection', (socket) => {
   });
 });
 
-// دالة إرسال إشعار
 function sendNotification(userId, message, data = {}) {
   const socketId = connectedUsers[userId];
   if (socketId) {
-    io.to(socketId).emit('notification', {
-      message,
-      data,
-      timestamp: new Date()
-    });
+    io.to(socketId).emit('notification', { message, data, timestamp: new Date() });
   }
 }
 
@@ -251,21 +255,6 @@ app.get('/logout', (req, res) => {
 });
 
 // ========== API Routes ==========
-
-// مسار الحصول على بيانات الجلسة
-app.get('/api/session', (req, res) => {
-  if (req.session.userId) {
-    res.json({ 
-      userId: req.session.userId, 
-      phone: req.session.phone,
-      name: req.session.userName 
-    });
-  } else {
-    res.json({ error: 'غير مسجل' });
-  }
-});
-
-// تسجيل مستخدم جديد
 app.post('/api/register', async (req, res) => {
   const { name, phone, password, confirm_password, device_id } = req.body;
   
@@ -305,7 +294,6 @@ app.post('/api/register', async (req, res) => {
   });
 });
 
-// تسجيل الدخول
 app.post('/api/login', async (req, res) => {
   const { phone, password, device_id } = req.body;
   
@@ -323,12 +311,10 @@ app.post('/api/login', async (req, res) => {
       return res.json({ error: 'رقم الهاتف أو كلمة المرور غير صحيحة' });
     }
     
-    // التحقق من الجهاز (نفس الهاتف) - إذا كان هناك device_id مسجل
     if (user.device_id && user.device_id !== device_id) {
-      return res.json({ error: 'لا يمكن الدخول من جهاز مختلف، هذا الحساب مرتبط بجهاز آخر' });
+      return res.json({ error: 'لا يمكن الدخول من جهاز مختلف' });
     }
     
-    // تحديث device_id إذا كان فارغاً
     if (!user.device_id && device_id) {
       db.run('UPDATE users SET device_id = ? WHERE id = ?', [device_id, user.id]);
     }
@@ -341,7 +327,6 @@ app.post('/api/login', async (req, res) => {
   });
 });
 
-// شراء كرت
 app.post('/api/buy', (req, res) => {
   const { userId, card_name, price, card_type } = req.body;
   
@@ -373,7 +358,6 @@ app.post('/api/buy', (req, res) => {
           [user.phone, user.name, card_name, price, voucherCode]
         );
         
-        // إرسال إشعار فوري
         sendNotification(userId, `✅ تم شراء ${card_name} بنجاح! الكود: ${voucherCode}`);
         
         res.json({ success: true, voucherCode, cardType: card_type, newBalance: user.wallet_balance - price });
@@ -382,9 +366,8 @@ app.post('/api/buy', (req, res) => {
   });
 });
 
-// طلب شحن المحفظة
 app.post('/api/charge', (req, res) => {
-  const { phone, amount, transaction_id, method } = req.body;
+  const { phone, amount, transaction_id } = req.body;
   
   if (!phone || !amount || !transaction_id) {
     return res.json({ error: 'جميع الحقول مطلوبة' });
@@ -406,42 +389,20 @@ app.post('/api/charge', (req, res) => {
   );
 });
 
-// جلب رصيد المستخدم
-app.get('/api/balance/:userId', (req, res) => {
-  const { userId } = req.params;
-  
-  db.get('SELECT wallet_balance FROM users WHERE id = ?', [userId], (err, row) => {
-    if (err || !row) {
-      return res.json({ balance: 0 });
-    }
-    res.json({ balance: row.wallet_balance });
-  });
-});
-
-// جلب سجل المعاملات API
-app.get('/api/transactions/:userId', (req, res) => {
-  const { userId } = req.params;
-  
-  db.get('SELECT phone FROM users WHERE id = ?', [userId], (err, user) => {
-    if (err || !user) {
-      return res.json({ transactions: [] });
-    }
-    
-    const phone = user.phone;
-    
-    db.all('SELECT "شحن" as type, amount, status, created_at, transaction_id as ref FROM wallet_charges WHERE phone = ?', [phone], (err, charges) => {
-      db.all('SELECT "شراء" as type, cost as amount, status, created_at, request_type as ref FROM gift_requests WHERE phone = ?', [phone], (err, gifts) => {
-        let transactions = [...(charges || []), ...(gifts || [])];
-        transactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        res.json({ transactions });
-      });
+app.get('/api/session', (req, res) => {
+  if (req.session.userId) {
+    res.json({ 
+      userId: req.session.userId, 
+      phone: req.session.phone,
+      name: req.session.userName 
     });
-  });
+  } else {
+    res.json({ error: 'غير مسجل' });
+  }
 });
 
 // ========== تشغيل الخادم ==========
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`🚀 الخادم يعمل على http://localhost:${PORT}`);
-  console.log(`📱 محفظة المفيد نت جاهزة للإشعارات الفورية`);
 });
