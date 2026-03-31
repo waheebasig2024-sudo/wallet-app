@@ -1,355 +1,62 @@
-<?php
-session_start();
-require_once 'includes/config.php';
-
-if (isLoggedIn()) {
-    header('Location: dashboard.php');
-    exit;
-}
-
-$error = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $phone = trim($_POST['phone']);
-    $password = $_POST['password'];
-    
-    // التحقق من الحقول الفارغة
-    if (empty($phone) || empty($password)) {
-        $error = '❌ جميع الحقول مطلوبة';
-    } else {
-        if ($pdo) {
-            try {
-                $stmt = $pdo->prepare("SELECT * FROM users WHERE phone = ?");
-                $stmt->execute([$phone]);
-                $user = $stmt->fetch();
-                
-                if ($user) {
-                    if (password_verify($password, $user['password'])) {
-                        $_SESSION['wallet_user_id'] = $user['phone'];
-                        $_SESSION['wallet_user_name'] = $user['name'];
-                        header('Location: dashboard.php');
-                        exit;
-                    } else {
-                        $error = '❌ رقم الهاتف أو كلمة المرور غير صحيحة';
-                    }
-                } else {
-                    $error = '❌ رقم الهاتف أو كلمة المرور غير صحيحة';
-                }
-            } catch (Exception $e) {
-                $error = '❌ حدث خطأ في قاعدة البيانات';
-            }
-        } else {
-            $error = '❌ مشكلة في الاتصال بقاعدة البيانات';
-        }
-    }
-}
-
-$gregorian_date = date('d/m/Y');
-?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>محفظة المفيد نت</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>دخول - محفظة المفيد نت</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Tahoma', 'Segoe UI', sans-serif;
-        }
-        
-        body {
-            background: linear-gradient(145deg, #0f1a2f, #1a2a45);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-        }
-        
-        .container {
-            width: 100%;
-            max-width: 420px;
-            margin: 0 auto;
-        }
-        
-        /* البطاقة الرئيسية */
-        .main-card {
-            background: rgba(18, 28, 45, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 32px;
-            padding: 28px 22px;
-            border: 1px solid rgba(212, 175, 55, 0.25);
-            box-shadow: 0 25px 50px -10px rgba(0, 0, 0, 0.5);
-        }
-        
-        /* شريط التاريخ */
-        .date-row {
-            background: rgba(0, 0, 0, 0.25);
-            padding: 12px 18px;
-            border-radius: 40px;
-            margin-bottom: 24px;
-            display: flex;
-            justify-content: space-between;
-            color: #b8c2d4;
-            font-size: 14px;
-            border: 1px solid rgba(212, 175, 55, 0.2);
-            backdrop-filter: blur(5px);
-        }
-        
-        /* منطقة الشعار */
-        .logo-area {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .logo-icon {
-            font-size: 48px;
-            margin-bottom: 8px;
-            filter: drop-shadow(0 5px 15px rgba(212, 175, 55, 0.4));
-        }
-        
-        .logo-area h1 {
-            font-size: 32px;
-            background: linear-gradient(135deg, #ffffff, #d4af37);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 4px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }
-        
-        .logo-sub {
-            color: #8e9aaf;
-            font-size: 13px;
-            letter-spacing: 1px;
-        }
-        
-        /* حقول الإدخال */
-        .input-group {
-            margin-bottom: 20px;
-        }
-        
-        .input-label {
-            display: block;
-            color: #d4af37;
-            margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 600;
-        }
-        
-        .input-wrapper {
-            position: relative;
-            display: flex;
-            align-items: center;
-        }
-        
-        .input-icon {
-            position: absolute;
-            right: 16px;
-            color: #d4af37;
-            font-size: 18px;
-            opacity: 0.8;
-        }
-        
-        .input-field {
-            width: 100%;
-            padding: 16px 50px 16px 16px;
-            background: rgba(10, 20, 35, 0.8);
-            border: 1.5px solid rgba(212, 175, 55, 0.2);
-            border-radius: 40px;
-            color: white;
-            font-size: 16px;
-            transition: all 0.3s;
-        }
-        
-        .input-field:focus {
-            outline: none;
-            border-color: #d4af37;
-            box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.15);
-            background: rgba(10, 20, 35, 0.95);
-        }
-        
-        .input-field::placeholder {
-            color: #5f6b7f;
-            font-size: 14px;
-        }
-        
-        /* زر الدخول */
-        .login-btn {
-            width: 100%;
-            padding: 16px;
-            background: linear-gradient(135deg, #d4af37, #b48c2c);
-            border: none;
-            border-radius: 40px;
-            color: #0b1120;
-            font-weight: 800;
-            font-size: 18px;
-            cursor: pointer;
-            margin: 25px 0 20px;
-            transition: all 0.3s;
-            box-shadow: 0 8px 20px -5px rgba(212, 175, 55, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            letter-spacing: 0.5px;
-        }
-        
-        .login-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 30px -5px rgba(212, 175, 55, 0.6);
-            background: linear-gradient(135deg, #e0b943, #c79d33);
-        }
-        
-        .login-btn:active {
-            transform: translateY(0);
-        }
-        
-        /* روابط المساعدة */
-        .help-links {
-            display: flex;
-            justify-content: space-between;
-            margin: 15px 0 25px;
-            gap: 10px;
-        }
-        
-        .help-link {
-            flex: 1;
-            color: #d4af37;
-            text-decoration: none;
-            font-size: 13px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 12px 8px;
-            background: rgba(212, 175, 55, 0.08);
-            border-radius: 40px;
-            transition: all 0.3s;
-            border: 1px solid rgba(212, 175, 55, 0.2);
-            font-weight: 500;
-        }
-        
-        .help-link:hover {
-            background: rgba(212, 175, 55, 0.15);
-            border-color: rgba(212, 175, 55, 0.4);
-            transform: translateY(-2px);
-        }
-        
-        /* قسم المطورين */
-        .dev-section {
-            margin-top: 25px;
-            padding: 20px 15px;
-            border: 1.5px solid rgba(212, 175, 55, 0.25);
-            border-radius: 30px;
-            background: rgba(0, 0, 0, 0.2);
-            text-align: center;
-        }
-        
-        .dev-title {
-            color: #d4af37;
-            margin-bottom: 18px;
-            font-size: 15px;
-            font-weight: 600;
-            letter-spacing: 1px;
-        }
-        
-        .dev-grid {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-        
-        .dev-item {
-            flex: 1;
-            min-width: 120px;
-            padding: 12px 8px;
-            background: rgba(212, 175, 55, 0.1);
-            border-radius: 20px;
-            border: 1px solid rgba(212, 175, 55, 0.2);
-            transition: all 0.3s;
-        }
-        
-        .dev-item:hover {
-            background: rgba(212, 175, 55, 0.15);
-            transform: translateY(-3px);
-        }
-        
-        .dev-name {
-            color: #d4af37;
-            font-weight: 700;
-            margin-bottom: 6px;
-            font-size: 14px;
-        }
-        
-        .dev-phone {
-            color: #b0b8cc;
-            font-size: 12px;
-            direction: ltr;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 4px 8px;
-            border-radius: 30px;
-            display: inline-block;
-        }
-        
-        /* رسالة الخطأ */
-        .error-message {
-            background: rgba(220, 53, 69, 0.15);
-            color: #ff9b9b;
-            padding: 14px 18px;
-            border-radius: 40px;
-            margin-bottom: 20px;
-            text-align: center;
-            border: 1px solid rgba(220, 53, 69, 0.3);
-            backdrop-filter: blur(5px);
-            font-weight: 500;
-        }
-        
-        /* حاشية سفلية */
-        .footer-note {
-            text-align: center;
-            margin-top: 20px;
-            color: #5f6b7f;
-            font-size: 11px;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Tahoma', sans-serif; }
+        body { background: linear-gradient(145deg, #0b1120, #19233c); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .login-card { background: rgba(18, 28, 45, 0.95); backdrop-filter: blur(10px); padding: 40px; border-radius: 30px; border: 1px solid rgba(212, 175, 55, 0.3); width: 100%; max-width: 400px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5); position: relative; overflow: hidden; }
+        .login-card::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(212, 175, 55, 0.05) 0%, transparent 70%); z-index: 0; }
+        .content-wrapper { position: relative; z-index: 1; }
+        .logo { font-size: 50px; margin-bottom: 20px; display: inline-block; filter: drop-shadow(0 0 10px rgba(212, 175, 55, 0.3)); }
+        .title { color: #d4af37; font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+        .date-badge { background: rgba(212, 175, 55, 0.1); color: #d4af37; padding: 5px 15px; border-radius: 20px; font-size: 12px; display: inline-block; margin-bottom: 25px; border: 1px solid rgba(212, 175, 55, 0.2); }
+        .error-msg { background: rgba(255, 77, 77, 0.1); color: #ff4d4d; padding: 12px; border-radius: 12px; margin-bottom: 20px; font-size: 14px; border: 1px solid rgba(255, 77, 77, 0.2); display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .input-group { margin-bottom: 20px; text-align: right; }
+        .input-label { display: block; color: #aaa; margin-bottom: 8px; font-size: 14px; margin-right: 5px; }
+        .input-field { width: 100%; padding: 15px; border-radius: 15px; border: 1px solid #2a3a5a; background: #0b1120; color: white; font-size: 16px; transition: all 0.3s ease; text-align: center; }
+        .input-field:focus { border-color: #d4af37; outline: none; box-shadow: 0 0 15px rgba(212, 175, 55, 0.1); background: #0f1a2f; }
+        .login-btn { width: 100%; padding: 15px; border-radius: 15px; border: none; background: linear-gradient(135deg, #d4af37, #b48c2c); color: #0b1120; font-size: 18px; font-weight: bold; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 5px 15px rgba(180, 140, 44, 0.3); margin-top: 10px; }
+        .login-btn:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(212, 175, 55, 0.2); }
+        .login-btn:active { transform: translateY(-1px); }
+        .help-links { margin-top: 25px; display: flex; flex-direction: column; gap: 15px; }
+        .help-link { color: #aaa; text-decoration: none; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.3s; }
+        .help-link:hover { color: #d4af37; }
+        .dev-section { margin-top: 40px; padding-top: 20px; border-top: 1px solid #2a3a5a; }
+        .dev-title { color: #666; font-size: 12px; margin-bottom: 15px; letter-spacing: 2px; text-transform: uppercase; }
+        .dev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .dev-item { background: rgba(255, 255, 255, 0.03); padding: 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05); }
+        .dev-name { color: #d4af37; font-size: 11px; font-weight: bold; margin-bottom: 4px; }
+        .dev-phone { color: #444; font-size: 10px; font-family: 'Courier New', monospace; }
+        .footer-note { margin-top: 20px; color: #333; font-size: 10px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="main-card">
-            <!-- التاريخ -->
-            <div class="date-row">
-                <span>📅 <?php echo $gregorian_date; ?></span>
-                <span>🌙 11 رمضان 1446 هـ</span>
-            </div>
+    <div class="login-card">
+        <div class="content-wrapper">
+            <div class="logo">📱</div>
+            <h1 class="title">محفظة المفيد نت</h1>
+            <div class="date-badge">🗓 <%= new Date().toLocaleDateString('ar-YE') %></div>
             
-            <!-- الشعار -->
-            <div class="logo-area">
-                <div class="logo-icon">💰</div>
-                <h1>محفظة المفيد نت</h1>
-                <div class="logo-sub">AL-MUFEED WALLET</div>
-            </div>
-            
-            <!-- رسالة الخطأ -->
-            <?php if(!empty($error)): ?>
-            <div class="error-message"><?php echo $error; ?></div>
-            <?php endif; ?>
-            
-            <!-- نموذج الدخول -->
-            <form method="POST">
+            <p style="color: #666; font-size: 14px; margin-bottom: 30px;">أهلاً بك، سجل دخولك للمتابعة</p>
+
+            <% if (error) { %>
+                <div class="error-msg"><%= error %></div>
+            <% } %>
+
+            <form action="/login" method="POST">
                 <div class="input-group">
-                    <label class="input-label">📱 رقم الهاتف</label>
-                    <div class="input-wrapper">
-                        <span class="input-icon">📞</span>
-                        <input type="text" name="phone" class="input-field" placeholder="أدخل رقم هاتفك" value="<?php echo isset($_POST['phone']) ? htmlspecialchars($_POST['phone']) : ''; ?>" required>
+                    <label class="input-label">رقم الهاتف</label>
+                    <div style="position: relative;">
+                        <input type="text" name="phone" class="input-field" placeholder="أدخل رقم الهاتف" required>
                     </div>
                 </div>
                 
                 <div class="input-group">
-                    <label class="input-label">🔐 كلمة المرور</label>
-                    <div class="input-wrapper">
-                        <span class="input-icon">🔑</span>
+                    <label class="input-label">كلمة المرور</label>
+                    <div style="position: relative;">
                         <input type="password" name="password" class="input-field" placeholder="أدخل كلمة المرور" required>
                     </div>
                 </div>
@@ -357,17 +64,15 @@ $gregorian_date = date('d/m/Y');
                 <button type="submit" class="login-btn">دخول</button>
             </form>
             
-            <!-- روابط المساعدة -->
             <div class="help-links">
                 <a href="https://api.whatsapp.com/send?phone=967736136681&text=السلام عليكم، نسيت كلمة المرور" class="help-link" target="_blank">
                     <span>🔐</span> نسيت كلمة المرور؟
                 </a>
-                <a href="register.php" class="help-link">
+                <a href="/register" class="help-link">
                     <span>✨</span> مستخدم جديد؟
                 </a>
             </div>
             
-            <!-- قسم المطورين -->
             <div class="dev-section">
                 <div class="dev-title">✨ برمجة وتطوير ✨</div>
                 <div class="dev-grid">
