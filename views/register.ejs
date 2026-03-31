@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل جديد - محفظة المفيد نت</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Tahoma', sans-serif; }
+        body {
+            background: linear-gradient(145deg, #0f1a2f, #1a2a45);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container { width: 100%; max-width: 450px; }
+        .glass-card {
+            background: rgba(18, 28, 45, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 32px;
+            padding: 30px 25px;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+        }
+        h1 {
+            text-align: center;
+            font-size: 28px;
+            background: linear-gradient(135deg, #fff, #d4af37);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 25px;
+        }
+        .input-field {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            background: rgba(10, 20, 35, 0.8);
+            border: 1px solid rgba(212, 175, 55, 0.2);
+            border-radius: 30px;
+            color: white;
+            font-size: 16px;
+        }
+        .input-field:focus { outline: none; border-color: #d4af37; }
+        .btn-register {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #d4af37, #b48c2c);
+            border: none;
+            border-radius: 30px;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+            margin: 20px 0;
+            color: #0b1120;
+        }
+        .error-message {
+            background: rgba(220, 53, 69, 0.2);
+            color: #ff9b9b;
+            padding: 12px;
+            border-radius: 30px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .phone-hint {
+            font-size: 12px;
+            color: #8e9aaf;
+            margin: -5px 0 10px 0;
+        }
+        a { color: #d4af37; text-decoration: none; }
+        a:hover { color: #fff; }
+        .text-center { text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="glass-card">
+            <h1>تسجيل جديد</h1>
+            
+            <div id="errorMsg" class="error-message" style="display: none;"></div>
+            
+            <form id="registerForm">
+                <input type="text" id="name" class="input-field" placeholder="الاسم الكامل" required>
+                <input type="tel" id="phone" class="input-field" placeholder="رقم الهاتف (يبدأ بـ 7)" required>
+                <div class="phone-hint">📱 مثال: 773368764 (9 أرقام تبدأ بـ 7)</div>
+                <input type="password" id="password" class="input-field" placeholder="كلمة المرور (4 أحرف على الأقل)" required>
+                <input type="password" id="confirm_password" class="input-field" placeholder="تأكيد كلمة المرور" required>
+                <button type="submit" class="btn-register">تسجيل</button>
+            </form>
+            
+            <div class="text-center">
+                <a href="/">لديك حساب؟ سجل دخول</a>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    function getDeviceId() {
+        let deviceId = localStorage.getItem('device_id');
+        if (!deviceId) {
+            deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('device_id', deviceId);
+        }
+        return deviceId;
+    }
+    
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const name = document.getElementById('name').value;
+        const phone = document.getElementById('phone').value;
+        const password = document.getElementById('password').value;
+        const confirm_password = document.getElementById('confirm_password').value;
+        const deviceId = getDeviceId();
+        
+        const errorDiv = document.getElementById('errorMsg');
+        
+        const response = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, phone, password, confirm_password, device_id: deviceId })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            errorDiv.textContent = data.error;
+            errorDiv.style.display = 'block';
+        } else if (data.success) {
+            window.location.href = '/';
+        }
+    });
+    </script>
+</body>
+</html>

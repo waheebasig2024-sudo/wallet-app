@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم - محفظة المفيد نت</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Tahoma', sans-serif; }
+        body {
+            background: linear-gradient(145deg, #0b1120, #19233c);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header {
+            background: linear-gradient(135deg, #d4af37, #b48c2c);
+            padding: 20px;
+            border-radius: 30px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #0b1120;
+        }
+        .balance-card {
+            background: rgba(20, 30, 50, 0.9);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 30px;
+            padding: 25px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .balance-amount {
+            font-size: 36px;
+            font-weight: bold;
+            color: #d4af37;
+        }
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+        .menu-item {
+            background: rgba(20, 30, 50, 0.9);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 20px;
+            padding: 15px;
+            text-align: center;
+            color: #d4af37;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        .menu-item:hover { transform: translateY(-3px); background: rgba(212, 175, 55, 0.1); }
+        .card {
+            background: rgba(20, 30, 50, 0.9);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 30px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card h3 { color: #d4af37; margin-bottom: 15px; border-bottom: 1px solid rgba(212, 175, 55, 0.2); padding-bottom: 10px; }
+        .logout-btn {
+            background: rgba(0,0,0,0.2);
+            padding: 8px 20px;
+            border-radius: 50px;
+            text-decoration: none;
+            color: #0b1120;
+            font-weight: bold;
+        }
+        .notification-area {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .notification {
+            background: #d4af37;
+            color: #0b1120;
+            padding: 12px 20px;
+            border-radius: 50px;
+            margin-bottom: 10px;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="notification-area" id="notificationArea"></div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>👋 مرحباً <%= user.name %></h1>
+            <a href="/logout" class="logout-btn">🚪 خروج</a>
+        </div>
+        
+        <div class="balance-card">
+            <div>
+                <div style="color: #aaa; font-size: 14px;">رصيد المحفظة</div>
+                <div class="balance-amount"><%= user.wallet_balance %> <small style="font-size: 14px;">ريال</small></div>
+            </div>
+            <div style="font-size: 50px;">💰</div>
+        </div>
+        
+        <div class="menu-grid">
+            <a href="/charge" class="menu-item"><div>💰</div><div>شحن</div></a>
+            <a href="/buy" class="menu-item"><div>🛒</div><div>شراء</div></a>
+            <a href="/history" class="menu-item"><div>📊</div><div>الحركات</div></a>
+        </div>
+        
+        <div class="card">
+            <h3>📋 معلومات الحساب</h3>
+            <p style="margin: 10px 0;">📱 رقم الهاتف: <strong><%= user.phone %></strong></p>
+            <p>📅 تاريخ التسجيل: <strong><%= user.created_at %></strong></p>
+        </div>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const userId = <%= user.id %>;
+        
+        socket.emit('register-user', userId);
+        
+        socket.on('notification', (data) => {
+            const notifArea = document.getElementById('notificationArea');
+            const notif = document.createElement('div');
+            notif.className = 'notification';
+            notif.innerHTML = data.message;
+            notifArea.appendChild(notif);
+            setTimeout(() => notif.remove(), 5000);
+        });
+    </script>
+</body>
+</html>

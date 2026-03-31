@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>شحن المحفظة - محفظة المفيد نت</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Tahoma', sans-serif; }
+        body {
+            background: linear-gradient(145deg, #0b1120, #19233c);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: white;
+            padding: 20px;
+            border-radius: 30px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card {
+            background: rgba(20, 30, 50, 0.9);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 30px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+        .info-box {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            border-right: 4px solid #d4af37;
+        }
+        .input-field {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            background: rgba(10, 20, 35, 0.8);
+            border: 1px solid rgba(212, 175, 55, 0.2);
+            border-radius: 30px;
+            color: white;
+            font-size: 16px;
+        }
+        .btn-submit {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #d4af37, #b48c2c);
+            border: none;
+            border-radius: 30px;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+            color: #0b1120;
+            margin-top: 15px;
+        }
+        .error, .success {
+            padding: 12px;
+            border-radius: 30px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .error { background: rgba(220,53,69,0.2); color: #ff9b9b; }
+        .success { background: rgba(46,204,113,0.2); color: #2ecc71; }
+        .back-btn {
+            background: rgba(255,255,255,0.2);
+            padding: 8px 20px;
+            border-radius: 50px;
+            text-decoration: none;
+            color: white;
+        }
+        .payment-methods {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .method-btn {
+            flex: 1;
+            padding: 12px;
+            background: rgba(212, 175, 55, 0.1);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 30px;
+            text-align: center;
+            cursor: pointer;
+            color: #d4af37;
+        }
+        .method-btn.active {
+            background: rgba(212, 175, 55, 0.3);
+            border-color: #d4af37;
+        }
+        .method-details { display: none; }
+        .method-details.active { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 شحن المحفظة</h1>
+            <a href="/dashboard" class="back-btn">← رجوع</a>
+        </div>
+        
+        <div class="card">
+            <h2 style="color: #d4af37; margin-bottom: 20px;">طرق الشحن</h2>
+            
+            <div class="payment-methods">
+                <div class="method-btn active" data-method="krimi">📱 كريمي جوال</div>
+                <div class="method-btn" data-method="cash">💵 كاش</div>
+            </div>
+            
+            <!-- طريقة كريمي جوال -->
+            <div id="method-krimi" class="method-details active">
+                <div class="info-box">
+                    <p><strong>📱 رقم الحساب:</strong> <span style="direction: ltr; display: inline-block;">3012127439</span></p>
+                    <p><strong>👤 الاسم:</strong> وهيب حسن أحمد عساج</p>
+                    <p><strong>🏦 البنك:</strong> كريمي جوال</p>
+                    <p style="margin-top: 10px; font-size: 12px; color: #aaa;">⚠️ بعد التحويل، أدخل المبلغ ورقم العملية أدناه</p>
+                </div>
+            </div>
+            
+            <!-- طريقة الكاش -->
+            <div id="method-cash" class="method-details">
+                <div class="info-box">
+                    <p><strong>📍 مكان الاستلام:</strong> اليمن - تعز</p>
+                    <p><strong>👤 اسم المستلم:</strong> وهيب عساج</p>
+                    <p><strong>📞 للتواصل:</strong> 773368764</p>
+                    <p style="margin-top: 10px; font-size: 12px; color: #aaa;">⚠️ بعد الدفع نقداً، سيتم تفعيل الرصيد خلال 24 ساعة</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3 style="color: #d4af37; margin-bottom: 15px;">📝 إرسال طلب شحن</h3>
+            
+            <div id="errorMsg" class="error" style="display: none;"></div>
+            <div id="successMsg" class="success" style="display: none;"></div>
+            
+            <form id="chargeForm">
+                <input type="number" id="amount" class="input-field" placeholder="المبلغ (ريال) - الحد الأدنى 100" min="100" required>
+                <input type="text" id="transaction_id" class="input-field" placeholder="رقم العملية (رقم التحويل)" required>
+                <input type="hidden" id="method" name="method" value="krimi">
+                <button type="submit" class="btn-submit">إرسال طلب الشحن</button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        // تبديل طرق الدفع
+        document.querySelectorAll('.method-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                const method = btn.dataset.method;
+                document.getElementById('method').value = method;
+                
+                document.querySelectorAll('.method-details').forEach(d => d.classList.remove('active'));
+                document.getElementById(`method-${method}`).classList.add('active');
+            });
+        });
+        
+        // إرسال طلب الشحن
+        document.getElementById('chargeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const amount = document.getElementById('amount').value;
+            const transaction_id = document.getElementById('transaction_id').value;
+            const method = document.getElementById('method').value;
+            
+            const errorDiv = document.getElementById('errorMsg');
+            const successDiv = document.getElementById('successMsg');
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+            
+            // الحصول على رقم الهاتف من الجلسة
+            const phoneResponse = await fetch('/api/session');
+            let phone = '';
+            try {
+                const sessionData = await phoneResponse.json();
+                phone = sessionData.phone;
+            } catch(e) {}
+            
+            const response = await fetch('/api/charge', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, amount, transaction_id, method })
+            });
+            
+            const data = await response.json();
+            
+            if (data.error) {
+                errorDiv.textContent = data.error;
+                errorDiv.style.display = 'block';
+            } else if (data.success) {
+                successDiv.textContent = '✅ تم إرسال طلب الشحن بنجاح! سيتم مراجعته خلال 24 ساعة';
+                successDiv.style.display = 'block';
+                document.getElementById('chargeForm').reset();
+            }
+        });
+    </script>
+</body>
+</html>

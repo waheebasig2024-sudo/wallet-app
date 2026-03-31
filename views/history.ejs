@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سجل الحركات - محفظة المفيد نت</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Tahoma', sans-serif; }
+        body {
+            background: linear-gradient(145deg, #0b1120, #19233c);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: white;
+            padding: 20px;
+            border-radius: 30px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card {
+            background: rgba(20, 30, 50, 0.9);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 30px;
+            padding: 20px;
+        }
+        .transaction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .transaction-item:last-child { border-bottom: none; }
+        .amount-positive { color: #2ecc71; }
+        .amount-negative { color: #e74c3c; }
+        .status-badge {
+            padding: 3px 10px;
+            border-radius: 50px;
+            font-size: 11px;
+            display: inline-block;
+            margin-top: 5px;
+        }
+        .status-pending { background: rgba(243,156,18,0.2); color: #f39c12; }
+        .status-completed { background: rgba(46,204,113,0.2); color: #2ecc71; }
+        .empty-message { text-align: center; color: #aaa; padding: 40px; }
+        .back-btn {
+            background: rgba(255,255,255,0.2);
+            padding: 8px 20px;
+            border-radius: 50px;
+            text-decoration: none;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 سجل الحركات</h1>
+            <a href="/dashboard" class="back-btn">← رجوع</a>
+        </div>
+        
+        <div class="card">
+            <% if (transactions.length === 0) { %>
+            <div class="empty-message">
+                📭 لا توجد حركات حتى الآن
+            </div>
+            <% } else { %>
+                <% transactions.forEach(trans => { %>
+                <div class="transaction-item">
+                    <div>
+                        <div style="font-weight: bold;">
+                            <%= trans.type == 'شحن' ? '💰 شحن رصيد' : '🛒 شراء ' + trans.ref %>
+                        </div>
+                        <div style="font-size: 12px; color: #aaa;"><%= trans.created_at %></div>
+                        <% if (trans.ref && trans.type == 'شحن') { %>
+                        <div style="font-size: 11px; direction: ltr;"><%= trans.ref %></div>
+                        <% } %>
+                    </div>
+                    <div style="text-align: left;">
+                        <div class="<%= trans.type == 'شحن' ? 'amount-positive' : 'amount-negative' %>">
+                            <%= trans.type == 'شحن' ? '+' : '-' %><%= trans.amount %> ريال
+                        </div>
+                        <span class="status-badge status-<%= trans.status %>">
+                            <%= trans.status == 'pending' ? 'قيد المراجعة' : 'مكتمل' %>
+                        </span>
+                    </div>
+                </div>
+                <% }); %>
+            <% } %>
+        </div>
+    </div>
+</body>
+</html>

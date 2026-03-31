@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>عرض الكرت - محفظة المفيد نت</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: linear-gradient(145deg, #0b1120, #19233c);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            font-family: 'Tahoma', sans-serif;
+        }
+        .card-wrapper {
+            max-width: 500px;
+            width: 100%;
+            margin: 0 auto;
+        }
+        .card-container {
+            position: relative;
+            width: 100%;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .card-image {
+            width: 100%;
+            display: block;
+        }
+        .code-number {
+            position: absolute;
+            color: #000000;
+            font-size: 24px;
+            font-weight: bold;
+            direction: ltr;
+            background: transparent;
+            font-family: 'Courier New', monospace;
+            text-align: center;
+            z-index: 10;
+        }
+        /* موقع الكود حسب نوع الكرت */
+        .code-200 { top: 68%; left: 50%; transform: translateX(-50%); font-size: 22px; }
+        .code-300 { top: 68%; left: 50%; transform: translateX(-50%); font-size: 22px; }
+        .code-500 { top: 68%; left: 50%; transform: translateX(-50%); font-size: 22px; }
+        .code-1000 { top: 68%; left: 50%; transform: translateX(-50%); font-size: 24px; }
+        .code-3000 { top: 68%; left: 50%; transform: translateX(-50%); font-size: 26px; }
+        
+        .action-buttons {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .save-btn, .share-btn {
+            padding: 15px;
+            border: none;
+            border-radius: 50px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .save-btn {
+            background: linear-gradient(135deg, #d4af37, #b48c2c);
+            color: #0b1120;
+        }
+        .share-row {
+            display: flex;
+            gap: 10px;
+        }
+        .share-btn {
+            flex: 1;
+            text-align: center;
+            text-decoration: none;
+        }
+        .btn-whatsapp { background: #25d366; color: white; }
+        .btn-telegram { background: #0088cc; color: white; }
+        .btn-copy { background: #6c757d; color: white; }
+        .save-btn:hover, .share-btn:hover { transform: translateY(-3px); }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+    <div class="card-wrapper">
+        <div class="card-container" id="cardContainer">
+            <img src="/images/<%= amount %>.png" alt="كرت <%= amount %> ريال" class="card-image" id="cardImage">
+            <div class="code-number code-<%= amount %>" id="voucherCode"><%= code %></div>
+        </div>
+        
+        <div class="action-buttons">
+            <button class="save-btn" id="saveBtn">💾 حفظ الصورة مع الكود</button>
+            <div class="share-row">
+                <a href="https://wa.me/?text=<%= encodeURIComponent(`كرت ${amount} ريال\nالكود: ${code}\nwww.almufeed.net`) %>" target="_blank" class="share-btn btn-whatsapp">📱 واتساب</a>
+                <a href="https://t.me/share/url?url=<%= encodeURIComponent(`كرت ${amount} ريال\nالكود: ${code}`) %>" target="_blank" class="share-btn btn-telegram">📨 تليجرام</a>
+                <button class="share-btn btn-copy" id="copyBtn">📋 نسخ الكود</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const code = '<%= code %>';
+        
+        document.getElementById('copyBtn').addEventListener('click', () => {
+            navigator.clipboard.writeText(code).then(() => alert('✅ تم نسخ الكود: ' + code));
+        });
+        
+        document.getElementById('saveBtn').addEventListener('click', function() {
+            const element = document.getElementById('cardContainer');
+            this.textContent = '⏳ جاري التحضير...';
+            this.disabled = true;
+            
+            html2canvas(element, { scale: 2, backgroundColor: null }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `card_<%= amount %>_${code}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                this.textContent = '💾 حفظ الصورة مع الكود';
+                this.disabled = false;
+                alert('✅ تم حفظ الصورة بنجاح');
+            }).catch(() => {
+                alert('❌ فشل حفظ الصورة');
+                this.textContent = '💾 حفظ الصورة مع الكود';
+                this.disabled = false;
+            });
+        });
+    </script>
+</body>
+</html>
