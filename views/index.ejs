@@ -1,391 +1,408 @@
-<?php
-session_start();
-require_once 'includes/config.php';
+// ============================================
+// محفظة المفيد نت - الخادم الرئيسي
+// مع دعم الإشعارات الفورية (WebSockets)
+// ============================================
 
-if (isLoggedIn()) {
-    header('Location: dashboard.php');
-    exit;
+require('dotenv').config();
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const session = require('express-session');
+const cors = require('cors');
+const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+// ========== الإعدادات ==========
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, '../views'));
+app.use(express.static(path.join(__dirname, '../public')));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cors());
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'wallet_secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false, maxAge: 7 * 24 * 60 * 60 * 1000 }
+}));
+
+// ========== إنشاء مجلد قاعدة البيانات ==========
+const dbDir = path.join(__dirname, '../database');
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+const dbPath = path.join(dbDir, 'wallet.db');
+console.log('📁 مسار قاعدة البيانات:', dbPath);
+
+// ========== قاعدة البيانات ==========
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('❌ خطأ في قاعدة البيانات:', err.message);
+  } else {
+    console.log('✅ قاعدة البيانات متصلة بنجاح');
+    إنشاءالجداول();
+  }
+});
+
+function إنشاءالجداول() {
+  db.serialize(() => {
+    // جدول المستخدمين
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT UNIQUE,
+        name TEXT,
+        password TEXT,
+        wallet_balance REAL DEFAULT 0,
+        device_id TEXT,
+        role TEXT DEFAULT 'user',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) console.error('خطأ في جدول users:', err.message);
+      else console.log('✅ جدول users جاهز');
+    });
+
+    // جدول الكروت
+    db.run(`
+      CREATE TABLE IF NOT EXISTS card_stock (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_type TEXT,
+        card_code TEXT,
+        status TEXT DEFAULT 'available',
+        sold_to TEXT,
+        sold_at DATETIME
+      )
+    `, (err) => {
+      if (err) console.error('خطأ في جدول card_stock:', err.message);
+      else console.log('✅ جدول card_stock جاهز');
+    });
+
+    // جدول طلبات الشراء
+    db.run(`
+      CREATE TABLE IF NOT EXISTS gift_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT,
+        name TEXT,
+        request_type TEXT,
+        cost REAL,
+        status TEXT DEFAULT 'pending',
+        gift_card TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) console.error('خطأ في جدول gift_requests:', err.message);
+      else console.log('✅ جدول gift_requests جاهز');
+    });
+
+    // جدول طلبات الشحن
+    db.run(`
+      CREATE TABLE IF NOT EXISTS wallet_charges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT,
+        amount REAL,
+        transaction_id TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) console.error('خطأ في جدول wallet_charges:', err.message);
+      else console.log('✅ جدول wallet_charges جاهز');
+    });
+
+    // إضافة بعض الكروت التجريبية إذا كانت فارغة
+    db.get("SELECT COUNT(*) as count FROM card_stock", [], (err, row) => {
+      if (!err && row.count === 0) {
+        const sampleCards = [
+          { type: '200', code: 'CARD200' + Math.floor(Math.random() * 10000) },
+          { type: '300', code: 'CARD300' + Math.floor(Math.random() * 10000) },
+          { type: '500', code: 'CARD500' + Math.floor(Math.random() * 10000) },
+          { type: '1000', code: 'CARD1000' + Math.floor(Math.random() * 10000) },
+          { type: '3000', code: 'CARD3000' + Math.floor(Math.random() * 10000) }
+        ];
+        sampleCards.forEach(card => {
+          db.run("INSERT INTO card_stock (card_type, card_code, status) VALUES (?, ?, 'available')", [card.type, card.code]);
+        });
+        console.log('✅ تم إضافة كروت تجريبية');
+      }
+    });
+  });
 }
 
-$error = '';
+// ========== دوال مساعدة ==========
+function isLoggedIn(req) {
+  return req.session.userId ? true : false;
+}
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $phone = trim($_POST['phone']);
-    $password = $_POST['password'];
-    
-    // التحقق من الحقول الفارغة
-    if (empty($phone) || empty($password)) {
-        $error = '❌ جميع الحقول مطلوبة';
-    } else {
-        if ($pdo) {
-            try {
-                $stmt = $pdo->prepare("SELECT * FROM users WHERE phone = ?");
-                $stmt->execute([$phone]);
-                $user = $stmt->fetch();
-                
-                if ($user) {
-                    if (password_verify($password, $user['password'])) {
-                        $_SESSION['wallet_user_id'] = $user['phone'];
-                        $_SESSION['wallet_user_name'] = $user['name'];
-                        header('Location: dashboard.php');
-                        exit;
-                    } else {
-                        $error = '❌ رقم الهاتف أو كلمة المرور غير صحيحة';
-                    }
-                } else {
-                    $error = '❌ رقم الهاتف أو كلمة المرور غير صحيحة';
-                }
-            } catch (Exception $e) {
-                $error = '❌ حدث خطأ في قاعدة البيانات';
-            }
-        } else {
-            $error = '❌ مشكلة في الاتصال بقاعدة البيانات';
-        }
+function validatePhone(phone) {
+  const phoneRegex = /^7[0-9]{8}$/;
+  return phoneRegex.test(phone);
+}
+
+// ========== WebSockets للإشعارات ==========
+const connectedUsers = {};
+
+io.on('connection', (socket) => {
+  console.log('🟢 مستخدم متصل:', socket.id);
+
+  socket.on('register-user', (userId) => {
+    connectedUsers[userId] = socket.id;
+    console.log(`✅ المستخدم ${userId} مسجل للإشعارات`);
+  });
+
+  socket.on('disconnect', () => {
+    for (const [userId, socketId] of Object.entries(connectedUsers)) {
+      if (socketId === socket.id) {
+        delete connectedUsers[userId];
+        break;
+      }
     }
+    console.log('🔴 مستخدم انقطع');
+  });
+});
+
+function sendNotification(userId, message, data = {}) {
+  const socketId = connectedUsers[userId];
+  if (socketId) {
+    io.to(socketId).emit('notification', { message, data, timestamp: new Date() });
+  }
 }
 
-$gregorian_date = date('d/m/Y');
-?>
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>محفظة المفيد نت</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Tahoma', 'Segoe UI', sans-serif;
+// ========== الصفحات ==========
+app.get('/', (req, res) => {
+  if (req.session.userId) {
+    return res.redirect('/dashboard');
+  }
+  res.render('index', { error: null });
+});
+
+app.get('/register', (req, res) => {
+  if (req.session.userId) {
+    return res.redirect('/dashboard');
+  }
+  res.render('register', { error: null });
+});
+
+app.get('/dashboard', (req, res) => {
+  if (!req.session.userId) {
+    return res.redirect('/');
+  }
+  
+  db.get('SELECT * FROM users WHERE id = ?', [req.session.userId], (err, user) => {
+    if (err || !user) {
+      return res.redirect('/');
+    }
+    res.render('dashboard', { user });
+  });
+});
+
+app.get('/buy', (req, res) => {
+  if (!req.session.userId) {
+    return res.redirect('/');
+  }
+  
+  db.get('SELECT wallet_balance FROM users WHERE id = ?', [req.session.userId], (err, user) => {
+    const balance = user ? user.wallet_balance : 0;
+    res.render('buy', { balance, error: null, success: null, purchaseData: null });
+  });
+});
+
+app.get('/charge', (req, res) => {
+  if (!req.session.userId) {
+    return res.redirect('/');
+  }
+  res.render('charge', { error: null, success: null });
+});
+
+app.get('/history', (req, res) => {
+  if (!req.session.userId) {
+    return res.redirect('/');
+  }
+  
+  const phone = req.session.phone;
+  
+  db.all('SELECT "شحن" as type, amount, status, created_at, transaction_id as ref FROM wallet_charges WHERE phone = ?', [phone], (err, charges) => {
+    db.all('SELECT "شراء" as type, cost as amount, status, created_at, request_type as ref FROM gift_requests WHERE phone = ?', [phone], (err, gifts) => {
+      let transactions = [...(charges || []), ...(gifts || [])];
+      transactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      res.render('history', { transactions });
+    });
+  });
+});
+
+app.get('/display_card', (req, res) => {
+  const code = req.query.code || '';
+  const amount = req.query.amount || '';
+  res.render('display_card', { code, amount });
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy();
+  res.redirect('/');
+});
+
+// ========== API Routes ==========
+app.post('/api/register', async (req, res) => {
+  const { name, phone, password, confirm_password, device_id } = req.body;
+  
+  if (!name || !phone || !password) {
+    return res.json({ error: 'جميع الحقول مطلوبة' });
+  }
+  
+  if (!validatePhone(phone)) {
+    return res.json({ error: 'رقم الهاتف يجب أن يبدأ بـ 7 ويتكون من 9 أرقام' });
+  }
+  
+  if (password !== confirm_password) {
+    return res.json({ error: 'كلمة المرور غير متطابقة' });
+  }
+  
+  if (password.length < 4) {
+    return res.json({ error: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل' });
+  }
+  
+  db.get('SELECT phone FROM users WHERE phone = ?', [phone], async (err, existing) => {
+    if (existing) {
+      return res.json({ error: 'رقم الهاتف مستخدم بالفعل' });
+    }
+    
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    db.run(
+      'INSERT INTO users (phone, name, password, device_id) VALUES (?, ?, ?, ?)',
+      [phone, name, hashedPassword, device_id || null],
+      function(err) {
+        if (err) {
+          return res.json({ error: 'حدث خطأ في التسجيل' });
         }
+        res.json({ success: true });
+      }
+    );
+  });
+});
+
+app.post('/api/login', async (req, res) => {
+  const { phone, password, device_id } = req.body;
+  
+  if (!phone || !password) {
+    return res.json({ error: 'جميع الحقول مطلوبة' });
+  }
+  
+  db.get('SELECT * FROM users WHERE phone = ?', [phone], async (err, user) => {
+    if (err || !user) {
+      return res.json({ error: 'رقم الهاتف أو كلمة المرور غير صحيحة' });
+    }
+    
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.json({ error: 'رقم الهاتف أو كلمة المرور غير صحيحة' });
+    }
+    
+    if (user.device_id && user.device_id !== device_id) {
+      return res.json({ error: 'لا يمكن الدخول من جهاز مختلف' });
+    }
+    
+    if (!user.device_id && device_id) {
+      db.run('UPDATE users SET device_id = ? WHERE id = ?', [device_id, user.id]);
+    }
+    
+    req.session.userId = user.id;
+    req.session.phone = user.phone;
+    req.session.userName = user.name;
+    
+    res.json({ success: true });
+  });
+});
+
+app.post('/api/buy', (req, res) => {
+  const { userId, card_name, price, card_type } = req.body;
+  
+  if (!userId || !card_name || !price || !card_type) {
+    return res.json({ error: 'بيانات غير مكتملة' });
+  }
+  
+  db.get('SELECT wallet_balance, phone, name FROM users WHERE id = ?', [userId], (err, user) => {
+    if (err || !user) {
+      return res.json({ error: 'المستخدم غير موجود' });
+    }
+    
+    if (user.wallet_balance < price) {
+      return res.json({ error: 'الرصيد غير كافٍ' });
+    }
+    
+    db.get('SELECT * FROM card_stock WHERE card_type = ? AND status = "available" LIMIT 1', [card_type], (err, card) => {
+      if (err || !card) {
+        return res.json({ error: 'لا يوجد كروت متاحة حالياً' });
+      }
+      
+      const voucherCode = card.card_code;
+      
+      db.serialize(() => {
+        db.run('UPDATE card_stock SET status = "sold", sold_to = ?, sold_at = CURRENT_TIMESTAMP WHERE id = ?', [user.phone, card.id]);
+        db.run('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?', [price, userId]);
+        db.run(
+          'INSERT INTO gift_requests (phone, name, request_type, cost, status, gift_card) VALUES (?, ?, ?, ?, "completed", ?)',
+          [user.phone, user.name, card_name, price, voucherCode]
+        );
         
-        body {
-            background: linear-gradient(145deg, #0f1a2f, #1a2a45);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-        }
+        sendNotification(userId, `✅ تم شراء ${card_name} بنجاح! الكود: ${voucherCode}`);
         
-        .container {
-            width: 100%;
-            max-width: 420px;
-            margin: 0 auto;
-        }
-        
-        /* البطاقة الرئيسية */
-        .main-card {
-            background: rgba(18, 28, 45, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 32px;
-            padding: 28px 22px;
-            border: 1px solid rgba(212, 175, 55, 0.25);
-            box-shadow: 0 25px 50px -10px rgba(0, 0, 0, 0.5);
-        }
-        
-        /* شريط التاريخ */
-        .date-row {
-            background: rgba(0, 0, 0, 0.25);
-            padding: 12px 18px;
-            border-radius: 40px;
-            margin-bottom: 24px;
-            display: flex;
-            justify-content: space-between;
-            color: #b8c2d4;
-            font-size: 14px;
-            border: 1px solid rgba(212, 175, 55, 0.2);
-            backdrop-filter: blur(5px);
-        }
-        
-        /* منطقة الشعار */
-        .logo-area {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .logo-icon {
-            font-size: 48px;
-            margin-bottom: 8px;
-            filter: drop-shadow(0 5px 15px rgba(212, 175, 55, 0.4));
-        }
-        
-        .logo-area h1 {
-            font-size: 32px;
-            background: linear-gradient(135deg, #ffffff, #d4af37);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 4px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }
-        
-        .logo-sub {
-            color: #8e9aaf;
-            font-size: 13px;
-            letter-spacing: 1px;
-        }
-        
-        /* حقول الإدخال */
-        .input-group {
-            margin-bottom: 20px;
-        }
-        
-        .input-label {
-            display: block;
-            color: #d4af37;
-            margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 600;
-        }
-        
-        .input-wrapper {
-            position: relative;
-            display: flex;
-            align-items: center;
-        }
-        
-        .input-icon {
-            position: absolute;
-            right: 16px;
-            color: #d4af37;
-            font-size: 18px;
-            opacity: 0.8;
-        }
-        
-        .input-field {
-            width: 100%;
-            padding: 16px 50px 16px 16px;
-            background: rgba(10, 20, 35, 0.8);
-            border: 1.5px solid rgba(212, 175, 55, 0.2);
-            border-radius: 40px;
-            color: white;
-            font-size: 16px;
-            transition: all 0.3s;
-        }
-        
-        .input-field:focus {
-            outline: none;
-            border-color: #d4af37;
-            box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.15);
-            background: rgba(10, 20, 35, 0.95);
-        }
-        
-        .input-field::placeholder {
-            color: #5f6b7f;
-            font-size: 14px;
-        }
-        
-        /* زر الدخول */
-        .login-btn {
-            width: 100%;
-            padding: 16px;
-            background: linear-gradient(135deg, #d4af37, #b48c2c);
-            border: none;
-            border-radius: 40px;
-            color: #0b1120;
-            font-weight: 800;
-            font-size: 18px;
-            cursor: pointer;
-            margin: 25px 0 20px;
-            transition: all 0.3s;
-            box-shadow: 0 8px 20px -5px rgba(212, 175, 55, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            letter-spacing: 0.5px;
-        }
-        
-        .login-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 30px -5px rgba(212, 175, 55, 0.6);
-            background: linear-gradient(135deg, #e0b943, #c79d33);
-        }
-        
-        .login-btn:active {
-            transform: translateY(0);
-        }
-        
-        /* روابط المساعدة */
-        .help-links {
-            display: flex;
-            justify-content: space-between;
-            margin: 15px 0 25px;
-            gap: 10px;
-        }
-        
-        .help-link {
-            flex: 1;
-            color: #d4af37;
-            text-decoration: none;
-            font-size: 13px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 12px 8px;
-            background: rgba(212, 175, 55, 0.08);
-            border-radius: 40px;
-            transition: all 0.3s;
-            border: 1px solid rgba(212, 175, 55, 0.2);
-            font-weight: 500;
-        }
-        
-        .help-link:hover {
-            background: rgba(212, 175, 55, 0.15);
-            border-color: rgba(212, 175, 55, 0.4);
-            transform: translateY(-2px);
-        }
-        
-        /* قسم المطورين */
-        .dev-section {
-            margin-top: 25px;
-            padding: 20px 15px;
-            border: 1.5px solid rgba(212, 175, 55, 0.25);
-            border-radius: 30px;
-            background: rgba(0, 0, 0, 0.2);
-            text-align: center;
-        }
-        
-        .dev-title {
-            color: #d4af37;
-            margin-bottom: 18px;
-            font-size: 15px;
-            font-weight: 600;
-            letter-spacing: 1px;
-        }
-        
-        .dev-grid {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-        
-        .dev-item {
-            flex: 1;
-            min-width: 120px;
-            padding: 12px 8px;
-            background: rgba(212, 175, 55, 0.1);
-            border-radius: 20px;
-            border: 1px solid rgba(212, 175, 55, 0.2);
-            transition: all 0.3s;
-        }
-        
-        .dev-item:hover {
-            background: rgba(212, 175, 55, 0.15);
-            transform: translateY(-3px);
-        }
-        
-        .dev-name {
-            color: #d4af37;
-            font-weight: 700;
-            margin-bottom: 6px;
-            font-size: 14px;
-        }
-        
-        .dev-phone {
-            color: #b0b8cc;
-            font-size: 12px;
-            direction: ltr;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 4px 8px;
-            border-radius: 30px;
-            display: inline-block;
-        }
-        
-        /* رسالة الخطأ */
-        .error-message {
-            background: rgba(220, 53, 69, 0.15);
-            color: #ff9b9b;
-            padding: 14px 18px;
-            border-radius: 40px;
-            margin-bottom: 20px;
-            text-align: center;
-            border: 1px solid rgba(220, 53, 69, 0.3);
-            backdrop-filter: blur(5px);
-            font-weight: 500;
-        }
-        
-        /* حاشية سفلية */
-        .footer-note {
-            text-align: center;
-            margin-top: 20px;
-            color: #5f6b7f;
-            font-size: 11px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="main-card">
-            <!-- التاريخ -->
-            <div class="date-row">
-                <span>📅 <?php echo $gregorian_date; ?></span>
-                <span>🌙 11 رمضان 1446 هـ</span>
-            </div>
-            
-            <!-- الشعار -->
-            <div class="logo-area">
-                <div class="logo-icon">💰</div>
-                <h1>محفظة المفيد نت</h1>
-                <div class="logo-sub">AL-MUFEED WALLET</div>
-            </div>
-            
-            <!-- رسالة الخطأ -->
-            <?php if(!empty($error)): ?>
-            <div class="error-message"><?php echo $error; ?></div>
-            <?php endif; ?>
-            
-            <!-- نموذج الدخول -->
-            <form method="POST">
-                <div class="input-group">
-                    <label class="input-label">📱 رقم الهاتف</label>
-                    <div class="input-wrapper">
-                        <span class="input-icon">📞</span>
-                        <input type="text" name="phone" class="input-field" placeholder="أدخل رقم هاتفك" value="<?php echo isset($_POST['phone']) ? htmlspecialchars($_POST['phone']) : ''; ?>" required>
-                    </div>
-                </div>
-                
-                <div class="input-group">
-                    <label class="input-label">🔐 كلمة المرور</label>
-                    <div class="input-wrapper">
-                        <span class="input-icon">🔑</span>
-                        <input type="password" name="password" class="input-field" placeholder="أدخل كلمة المرور" required>
-                    </div>
-                </div>
-                
-                <button type="submit" class="login-btn">دخول</button>
-            </form>
-            
-            <!-- روابط المساعدة -->
-            <div class="help-links">
-                <a href="https://api.whatsapp.com/send?phone=967736136681&text=السلام عليكم، نسيت كلمة المرور" class="help-link" target="_blank">
-                    <span>🔐</span> نسيت كلمة المرور؟
-                </a>
-                <a href="register.php" class="help-link">
-                    <span>✨</span> مستخدم جديد؟
-                </a>
-            </div>
-            
-            <!-- قسم المطورين -->
-            <div class="dev-section">
-                <div class="dev-title">✨ برمجة وتطوير ✨</div>
-                <div class="dev-grid">
-                    <div class="dev-item">
-                        <div class="dev-name">Wheeb Asaaj</div>
-                        <div class="dev-phone">773368764</div>
-                    </div>
-                    <div class="dev-item">
-                        <div class="dev-name">Abo Al-Hassan</div>
-                        <div class="dev-phone">736136681</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="footer-note">
-                جميع الحقوق محفوظة © 2026
-            </div>
-        </div>
-    </div>
-</body>
-</html>
+        res.json({ success: true, voucherCode, cardType: card_type, newBalance: user.wallet_balance - price });
+      });
+    });
+  });
+});
+
+app.post('/api/charge', (req, res) => {
+  const { phone, amount, transaction_id } = req.body;
+  
+  if (!phone || !amount || !transaction_id) {
+    return res.json({ error: 'جميع الحقول مطلوبة' });
+  }
+  
+  if (amount < 100) {
+    return res.json({ error: 'الحد الأدنى للشحن 100 ريال' });
+  }
+  
+  db.run(
+    'INSERT INTO wallet_charges (phone, amount, transaction_id, status) VALUES (?, ?, ?, "pending")',
+    [phone, amount, transaction_id],
+    function(err) {
+      if (err) {
+        return res.json({ error: 'حدث خطأ في إرسال الطلب' });
+      }
+      res.json({ success: true });
+    }
+  );
+});
+
+app.get('/api/session', (req, res) => {
+  if (req.session.userId) {
+    res.json({ 
+      userId: req.session.userId, 
+      phone: req.session.phone,
+      name: req.session.userName 
+    });
+  } else {
+    res.json({ error: 'غير مسجل' });
+  }
+});
+
+// ========== تشغيل الخادم ==========
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`🚀 الخادم يعمل على http://localhost:${PORT}`);
+});
